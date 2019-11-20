@@ -1,1 +1,1 @@
-__version__ = '0.3.1'  # Use bumpversion to update
+__version__ = '0.3.1-new_letter_configuration'  # Use bumpversion to update

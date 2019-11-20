@@ -120,6 +120,8 @@ class LocalStorage(object):
 
         The method first checks if the local version has changes that will be overwritten.
         """
+        filename = './' + filename.replace(' ', '_') + '.xslt' 
+        
         if not os.path.exists(os.path.dirname(filename)):
             os.makedirs(os.path.dirname(filename))
 
@@ -228,7 +230,7 @@ class TemplateConfigurationTable(object):
 
     def open(self):
         try:
-            self.worker.first(By.CSS_SELECTOR, '#TABLE_DATA_fileList')
+            self.worker.first(By.CSS_SELECTOR, '#lettersOnPage')
         except NoSuchElementException:
             self.print_letter_status('Opening table...', '')
 
@@ -238,14 +240,15 @@ class TemplateConfigurationTable(object):
                 By.CSS_SELECTOR, '#ALMA_MENU_TOP_NAV_configuration')
             # text() = "General"
             self.worker.click(By.XPATH, '//*[@href="#CONF_MENU6"]')
-            self.worker.click(By.XPATH, '//*[text() = "Customize Letters"]')
-            self.worker.wait_for(By.CSS_SELECTOR, '#TABLE_DATA_fileList')
+            self.worker.click(By.XPATH, '//*[text() = "Letters Configuration"]')
+            self.worker.wait_for(By.CSS_SELECTOR, '#lettersOnPage')
 
         return self
 
     def modified(self, filename):
-        idx = self.filenames.index(filename)
-        return self.update_dates[idx]
+#         idx = self.filenames.index(filename)
+#         return self.update_dates[idx]
+        return ""
 
     def set_modified(self, filename, date):
         # Allow updating a single date instead of having to re-read the whole table
@@ -270,37 +273,56 @@ class TemplateConfigurationTable(object):
         sys.stdout.flush()
 
     def read(self):
+        
+        # number of letters on page 
+        elems_rows = self.worker.all(By.CSS_SELECTOR, '.jsRecordContainer')
+        
+        
+        # erster Wurf: nimme die ersten 10
+        for i in range(0, len(elems_rows)):
+            id = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI' % i
+            lettername = self.worker.all(By.CSS_SELECTOR, id)[0].text
+            self.filenames.append(lettername)
+            print(str(i) + ': ' + lettername)
+            
+        
 
-        # Identify the indices of the column headers we're interested in
-        elems = self.worker.all(By.CSS_SELECTOR, '#TABLE_DATA_fileList tr > th')
-        column_headers = [el.get_attribute('id') for el in elems]
-        filename_col = column_headers.index('SELENIUM_ID_fileList_HEADER_cfgFilefilename') + 1
-        updatedate_col = column_headers.index('SELENIUM_ID_fileList_HEADER_updateDate') + 1
-
-        # Read the filename column
-        elems = self.worker.all(By.CSS_SELECTOR,
-                                '#TABLE_DATA_fileList tr > td:nth-child(%d) > a' % filename_col)
-        self.filenames = [el.text.replace('../', '') for el in elems]
-
-        # Read the modification date column
-        elems = self.worker.all(By.CSS_SELECTOR,
-                                '#TABLE_DATA_fileList tr > td:nth-child(%d) > span' % updatedate_col)
-        self.update_dates = [el.text for el in elems]
-
-        # return [{x[0]:2 {'modified': x[1], 'index': n}} for n, x in enumerate(zip(filenames, update_dates))]
+#         # Identify the indices of the column headers we're interested in
+#         elems = self.worker.all(By.CSS_SELECTOR, '#lettersOnPage tr > th')
+#         column_headers = [el.get_attribute('id') for el in elems]
+#         filename_col = column_headers.index('SELENIUM_ID_fileList_HEADER_cfgFilefilename') + 1
+#         updatedate_col = column_headers.index('SELENIUM_ID_fileList_HEADER_updateDate') + 1
+# 
+#         # Read the filename column
+#         elems = self.worker.all(By.CSS_SELECTOR,
+#                                 '#lettersOnPage tr > td:nth-child(%d) > a' % filename_col)
+#         self.filenames = [el.text.replace('../', '') for el in elems]
+# 
+#         # Read the modification date column
+#         elems = self.worker.all(By.CSS_SELECTOR,
+#                                 '#lettersOnPage tr > td:nth-child(%d) > span' % updatedate_col)
+#         self.update_dates = [el.text for el in elems]
+# 
+#         # return [{x[0]:2 {'modified': x[1], 'index': n}} for n, x in enumerate(zip(filenames, update_dates))]
 
     def is_customized(self, filename):
         index = self.filenames.index(filename)
-        updated_by = self.worker.first(By.ID, 'SPAN_SELENIUM_ID_fileList_ROW_%d_COL_cfgFileupdatedBy' % index)
+
+        id_element = 'SELENIUM_ID_lettersOnPage_ROW_%d_COL_customized' % index
+        self.worker.wait_for(By.ID, id_element)
+        updated_by = self.worker.first(By.ID, id_element)
 
         return updated_by.text not in ('-', 'Network')
 
     def assert_filename(self, filename):
         # Assert that we are at the right letter
+        self.worker.wait_for(By.ID, 'breadcrumbs')
+        
         element = self.worker.wait.until(
-            EC.presence_of_element_located((By.ID, 'pageBeanconfigFilefilename'))
+            EC.presence_of_element_located((By.CSS_SELECTOR, '.pageTitle'))
         )
-        elt = element.text.replace('../', '')
+        
+        elt = element.text
         assert elt == filename, "%r != %r" % (elt, filename)
 
     def open_letter(self, filename):
@@ -309,42 +331,53 @@ class TemplateConfigurationTable(object):
         # Open a letter and return its contents as a LetterContent object.
         index = self.filenames.index(filename)
         self.worker.wait.until(EC.presence_of_element_located(
-            (By.ID, 'SELENIUM_ID_fileList_ROW_%d_COL_cfgFilefilename' % index))
+            (By.ID, 'SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI' % index))
         )
 
         time.sleep(0.2)
 
-        # Open the "ellipsis" menu.
-        self.worker.scroll_into_view_and_click(
-            '#input_fileList_{}'.format(index), By.CSS_SELECTOR)
+        # Open Letter configuration
+        self.worker.scroll_into_view_and_click('#SELENIUM_ID_lettersOnPage_ROW_{}_COL_letterNameForUI a'.format(index), By.CSS_SELECTOR)
         time.sleep(0.2)
-
-        if self.is_customized(filename):
-            # Click "Edit" menu item
-            edit_btn_selector = '#ROW_ACTION_fileList_{}_c\\.ui\\.table\\.btn\\.edit a'.format(index)
-            self.worker.scroll_into_view_and_click(edit_btn_selector, By.CSS_SELECTOR)
-        else:
-            # Click "Customize" menu item
-            customize_btn_selector = '#ROW_ACTION_fileList_{} a'.format(index)
-            self.worker.scroll_into_view_and_click(customize_btn_selector, By.CSS_SELECTOR)
-
-            element = self.worker.wait_for(
-                By.CSS_SELECTOR,
-                '#PAGE_BUTTONS_cbuttonconfirmationconfirm, #pageBeanfileContent'
-            )
-            if element.get_attribute("id") == 'PAGE_BUTTONS_cbuttonconfirmationconfirm':
-                # If this is the first time the letter is edited, and it's managed in network zone,
-                # we will get a modal dialog asking us to confirm if we want to edit it.
-                #
-                # > This row is managed in the Network. If customized, no future updates will be
-                # > retrieved from the Network for this row. Are you sure you want to proceed?
-                #
-                element.click()
 
         # We should now be at the letter edit form. Assert that filename is indeed correct
         self.assert_filename(filename)
 
-        txtarea = self.worker.first(By.ID, 'pageBeanfileContent')
+
+        # goto tab "Template"
+        # Click tab "Tempalte" menu item
+        btn_selector = '#cnew_letter_labeltemplate_span a'
+        self.worker.wait_for(By.CSS_SELECTOR, btn_selector)
+        self.worker.scroll_into_view_and_click(btn_selector, By.CSS_SELECTOR)
+        
+
+#         if self.is_customized(filename):
+#             # Click "Edit" menu item
+#             edit_btn_selector = '#ROW_ACTION_fileList_{}_c\\.ui\\.table\\.btn\\.edit a'.format(index)
+#             self.worker.scroll_into_view_and_click(edit_btn_selector, By.CSS_SELECTOR)
+#         else:
+#             # Click "Customize" menu item
+#             customize_btn_selector = '#ROW_ACTION_fileList_{} a'.format(index)
+#             self.worker.scroll_into_view_and_click(customize_btn_selector, By.CSS_SELECTOR)
+# 
+#             element = self.worker.wait_for(
+#                 By.CSS_SELECTOR,
+#                 '#PAGE_BUTTONS_cbuttonconfirmationconfirm, #pageBeanfileContent'
+#             )
+#             if element.get_attribute("id") == 'PAGE_BUTTONS_cbuttonconfirmationconfirm':
+#                 # If this is the first time the letter is edited, and it's managed in network zone,
+#                 # we will get a modal dialog asking us to confirm if we want to edit it.
+#                 #
+#                 # > This row is managed in the Network. If customized, no future updates will be
+#                 # > retrieved from the Network for this row. Are you sure you want to proceed?
+#                 #
+#                 element.click()
+
+
+
+        id_textarea = 'pageBeanfileContent'
+        self.worker.wait_for(By.ID, id_textarea)
+        txtarea = self.worker.first(By.ID, id_textarea)
         return LetterContent(txtarea.text)
 
     def open_default_letter(self, filename):
@@ -353,7 +386,7 @@ class TemplateConfigurationTable(object):
 
         index = self.filenames.index(filename)
         self.worker.wait.until(EC.presence_of_element_located(
-            (By.ID, 'SELENIUM_ID_fileList_ROW_%d_COL_cfgFilefilename' % index)))
+            (By.ID, 'SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI' % index)))
 
         if self.is_customized(filename):
 
@@ -369,7 +402,7 @@ class TemplateConfigurationTable(object):
         else:
             # Click the filename
             self.worker.scroll_into_view_and_click(
-                '#SELENIUM_ID_fileList_ROW_%d_COL_cfgFilefilename a' % index, By.CSS_SELECTOR)
+                '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI a' % index, By.CSS_SELECTOR)
             time.sleep(0.2)
 
         # Assert that filename is indeed correct
@@ -380,23 +413,31 @@ class TemplateConfigurationTable(object):
         return LetterContent(txtarea.text)
 
     def close_letter(self):
-        # If we are at specific letter, press the "go back" button.
+        # If we are at specific letter, press the "Cancel" button.
         elems = self.worker.all(By.CSS_SELECTOR, '.pageTitle')
         if len(elems) != 0:
-            title = elems[0].text.strip()
-            if title == 'Configuration File':
-                try:
-                    backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonback')
-                    backBtn.click()
-                except NoSuchElementException:
-                    pass
-                try:
-                    backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonnavigationcancel')
-                    backBtn.click()
-                except NoSuchElementException:
-                    pass
+            btn_selector = '#PAGE_BUTTONS_cbuttonnavigationcancel'
+            self.worker.scroll_into_view_and_click(btn_selector, By.CSS_SELECTOR)
 
-            self.worker.wait_for(By.CSS_SELECTOR, '#TABLE_DATA_fileList')
+        
+        
+#         # If we are at specific letter, press the "go back" button.
+#         elems = self.worker.all(By.CSS_SELECTOR, '.pageTitle')
+#         if len(elems) != 0:
+#             title = elems[0].text.strip()
+#             if title == 'Configuration File':
+#                 try:
+#                     backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonback')
+#                     backBtn.click()
+#                 except NoSuchElementException:
+#                     pass
+#                 try:
+#                     backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonnavigationcancel')
+#                     backBtn.click()
+#                 except NoSuchElementException:
+#                     pass
+# 
+#             self.worker.wait_for(By.CSS_SELECTOR, '#lettersOnPage')
 
     def put_contents(self, filename, content):
         """
@@ -610,11 +651,11 @@ def pull(table, local_storage, status_file):
 
         table.print_letter_status(filename, '', progress)
 
-        if table.modified(filename) == status_file.modified(filename) and status_file.modified(filename) != today:
-            # Update date has not changed, so no need to check the actual
-            # contents of the letter.
-            table.print_letter_status(filename, 'no changes', progress, True)
-            continue
+#         if table.modified(filename) == status_file.modified(filename) and status_file.modified(filename) != today:
+#             # Update date has not changed, so no need to check the actual
+#             # contents of the letter.
+#             table.print_letter_status(filename, 'no changes', progress, True)
+#             continue
 
         # Update date has changed, or is today (and we don't have time granularity),
         # so we should check if there are changes.
@@ -641,6 +682,10 @@ def pull(table, local_storage, status_file):
             continue
 
         # Store letter and update status.json
+#         if not local_storage.store(filename, content, table.modified(filename)):
+#             table.print_letter_status(
+#                 filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
+#             continue
         if not local_storage.store(filename, content, table.modified(filename)):
             table.print_letter_status(
                 filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)

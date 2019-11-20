@@ -165,6 +165,7 @@ class Shell(Cmd):
             pdb.post_mortem()
         elif answer == 'Restart browser':
             self.worker.restart()
+            self.table = TemplateConfigurationTable(self.worker)
             return
 
         self.worker.close()
