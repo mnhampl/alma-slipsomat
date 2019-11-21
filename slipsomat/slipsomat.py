@@ -120,12 +120,12 @@ class LocalStorage(object):
 
         The method first checks if the local version has changes that will be overwritten.
         """
-        filename = './' + filename.replace(' ', '_') + '.xslt' 
+        filename_with_path = './' + filename 
         
-        if not os.path.exists(os.path.dirname(filename)):
-            os.makedirs(os.path.dirname(filename))
+        if not os.path.exists(os.path.dirname(filename_with_path)):
+            os.makedirs(os.path.dirname(filename_with_path))
 
-        local_content = self.get_content(filename)
+        local_content = self.get_content(filename_with_path)
         if local_content.text != '' and local_content.sha1 != self.status_file.checksum(filename):
             # The local file has been changed
             if not resolve_conflict(filename, content, local_content,
@@ -133,7 +133,7 @@ class LocalStorage(object):
                 return False
 
         # Actually store the contents to disk
-        with open(filename, 'wb') as f:
+        with open(filename_with_path, 'wb') as f:
             f.write(content.text.encode('utf-8'))
 
         # Update the status file
@@ -225,8 +225,8 @@ class TemplateConfigurationTable(object):
         self.filenames = []
         self.update_dates = []
         self.worker = worker
-        self.open()
-        self.read()
+#         self.open()
+#         self.read()
 
     def open(self):
         try:
@@ -632,76 +632,78 @@ class TestPage(object):
         tmp.close()
 
 
-def pull(table, local_storage, status_file):
-    """
-    Update the local files with changes made in Alma.
-
-    This will download letters whose remote checksum does not match the value in status.json.
-
-    Params:
-        table: TemplateConfigurationTable object
-        local_storage: LocalStorage object
-        status_file: StatusFile object
-    """
-    today = datetime.now().strftime('%d/%m/%Y')
-    count_new = 0
-    count_changed = 0
-    for idx, filename in enumerate(table.filenames):
-        progress = '%3d/%3d' % ((idx + 1), len(table.filenames))
-
-        table.print_letter_status(filename, '', progress)
-
-#         if table.modified(filename) == status_file.modified(filename) and status_file.modified(filename) != today:
-#             # Update date has not changed, so no need to check the actual
-#             # contents of the letter.
+def pull(table, components_configuration, local_storage, status_file):
+    components_configuration.pull(local_storage, status_file)
+    
+#     """
+#     Update the local files with changes made in Alma.
+# 
+#     This will download letters whose remote checksum does not match the value in status.json.
+# 
+#     Params:
+#         table: TemplateConfigurationTable object
+#         local_storage: LocalStorage object
+#         status_file: StatusFile object
+#     """
+#     today = datetime.now().strftime('%d/%m/%Y')
+#     count_new = 0
+#     count_changed = 0
+#     for idx, filename in enumerate(table.filenames):
+#         progress = '%3d/%3d' % ((idx + 1), len(table.filenames))
+# 
+#         table.print_letter_status(filename, '', progress)
+# 
+# #         if table.modified(filename) == status_file.modified(filename) and status_file.modified(filename) != today:
+# #             # Update date has not changed, so no need to check the actual
+# #             # contents of the letter.
+# #             table.print_letter_status(filename, 'no changes', progress, True)
+# #             continue
+# 
+#         # Update date has changed, or is today (and we don't have time granularity),
+#         # so we should check if there are changes.
+# 
+#         table.print_letter_status(filename, 'checking...', progress)
+#         try:
+#             if table.is_customized(filename):
+#                 content = table.open_letter(filename)
+#             else:
+#                 content = table.open_default_letter(filename)
+#         except TimeoutException:
+#             # Retry once
+#             table.print_letter_status(filename, 'retrying...', progress)
+#             if table.is_customized(filename):
+#                 content = table.open_letter(filename)
+#             else:
+#                 content = table.open_default_letter(filename)
+# 
+#         table.close_letter()
+# 
+#         old_sha1 = status_file.checksum(filename)
+#         if content.sha1 == old_sha1:
 #             table.print_letter_status(filename, 'no changes', progress, True)
 #             continue
-
-        # Update date has changed, or is today (and we don't have time granularity),
-        # so we should check if there are changes.
-
-        table.print_letter_status(filename, 'checking...', progress)
-        try:
-            if table.is_customized(filename):
-                content = table.open_letter(filename)
-            else:
-                content = table.open_default_letter(filename)
-        except TimeoutException:
-            # Retry once
-            table.print_letter_status(filename, 'retrying...', progress)
-            if table.is_customized(filename):
-                content = table.open_letter(filename)
-            else:
-                content = table.open_default_letter(filename)
-
-        table.close_letter()
-
-        old_sha1 = status_file.checksum(filename)
-        if content.sha1 == old_sha1:
-            table.print_letter_status(filename, 'no changes', progress, True)
-            continue
-
-        # Store letter and update status.json
+# 
+#         # Store letter and update status.json
+# #         if not local_storage.store(filename, content, table.modified(filename)):
+# #             table.print_letter_status(
+# #                 filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
+# #             continue
 #         if not local_storage.store(filename, content, table.modified(filename)):
 #             table.print_letter_status(
 #                 filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
 #             continue
-        if not local_storage.store(filename, content, table.modified(filename)):
-            table.print_letter_status(
-                filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
-            continue
-
-        if old_sha1 is None:
-            count_new += 1
-            table.print_letter_status(filename, Fore.GREEN + 'fetched new letter @ {}'.format(
-                content.sha1[0:7]) + Style.RESET_ALL, progress, True)
-        else:
-            count_changed += 1
-            table.print_letter_status(filename, Fore.GREEN + 'updated from {} to {}'.format(
-                old_sha1[0:7], content.sha1[0:7]) + Style.RESET_ALL, progress, True)
-
-    sys.stdout.write(Fore.GREEN + 'Fetched {} new, {} changed letters\n'.format(
-        count_new, count_changed) + Style.RESET_ALL)
+# 
+#         if old_sha1 is None:
+#             count_new += 1
+#             table.print_letter_status(filename, Fore.GREEN + 'fetched new letter @ {}'.format(
+#                 content.sha1[0:7]) + Style.RESET_ALL, progress, True)
+#         else:
+#             count_changed += 1
+#             table.print_letter_status(filename, Fore.GREEN + 'updated from {} to {}'.format(
+#                 old_sha1[0:7], content.sha1[0:7]) + Style.RESET_ALL, progress, True)
+# 
+#     sys.stdout.write(Fore.GREEN + 'Fetched {} new, {} changed letters\n'.format(
+#         count_new, count_changed) + Style.RESET_ALL)
 
 
 def push(table, local_storage, status_file, files=None):

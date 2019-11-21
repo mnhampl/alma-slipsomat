@@ -197,3 +197,7 @@ class Worker(object):
 
     def get(self, url):
         return self.driver.get('https://{}.alma.exlibrisgroup.com/{}'.format(self.instance, url.lstrip('/')))
+    
+    def goto_alma_start_page(self):
+        self.get('/mng/action/home.do?mode=ajax')
+

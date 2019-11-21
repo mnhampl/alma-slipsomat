@@ -12,6 +12,7 @@ import questionary
 from . import __version__
 from .worker import Worker
 from .slipsomat import StatusFile, LocalStorage, TemplateConfigurationTable, TestPage
+from .components_configuration import ComponentsConfiguration
 from .slipsomat import pull, pull_defaults, push, test
 
 histfile = '.slipsomat_history'
@@ -47,7 +48,10 @@ class Shell(Cmd):
         self.local_storage = LocalStorage(self.status_file)
         sys.stdout.write('Reading table... ')
         sys.stdout.flush()
+        
         self.table = TemplateConfigurationTable(self.worker)
+        self.components_configuration = ComponentsConfiguration(self.worker)
+        
         self.testpage = TestPage(self.worker)
         sys.stdout.write('\rReading table... DONE\n')
 
@@ -73,7 +77,13 @@ class Shell(Cmd):
 
     def do_pull(self, arg):
         """Pull in letters modified directly in Alma."""
-        self.execute(pull, self.table, self.local_storage, self.status_file)
+        self.execute(
+            pull, 
+            self.table, 
+            self.components_configuration, 
+            self.local_storage, 
+            self.status_file
+        )
 
     def do_defaults(self, arg):
         """Pull in updates to default letters."""
