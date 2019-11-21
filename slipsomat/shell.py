@@ -11,8 +11,8 @@ import questionary
 
 from . import __version__
 from .worker import Worker
-from .slipsomat import StatusFile, LocalStorage, TemplateConfigurationTable, TestPage
-from .components_configuration import ComponentsConfiguration
+from .slipsomat import StatusFile, LocalStorage, TestPage
+from .configuration_table import ConfigurationTable
 from .slipsomat import pull, pull_defaults, push, test
 
 histfile = '.slipsomat_history'
@@ -49,8 +49,8 @@ class Shell(Cmd):
         sys.stdout.write('Reading table... ')
         sys.stdout.flush()
         
-        self.table = TemplateConfigurationTable(self.worker)
-        self.components_configuration = ComponentsConfiguration(self.worker)
+        self.letters_configuration    = ConfigurationTable('Letters Configuration', self.worker)
+        self.components_configuration = ConfigurationTable('Components Configuration', self.worker)
         
         self.testpage = TestPage(self.worker)
         sys.stdout.write('\rReading table... DONE\n')
@@ -79,7 +79,7 @@ class Shell(Cmd):
         """Pull in letters modified directly in Alma."""
         self.execute(
             pull, 
-            self.table, 
+            self.letters_configuration, 
             self.components_configuration, 
             self.local_storage, 
             self.status_file
@@ -87,7 +87,7 @@ class Shell(Cmd):
 
     def do_defaults(self, arg):
         """Pull in updates to default letters."""
-        self.execute(pull_defaults, self.table, self.local_storage, self.status_file)
+        self.execute(pull_defaults, self.letters_configuration, self.local_storage, self.status_file)
 
     def help_push(self):
         print(dedent("""
@@ -104,7 +104,7 @@ class Shell(Cmd):
 
     def do_push(self, arg):
         files = ['xsl/letters/%s' % filename for filename in shlex.split(arg)]
-        self.execute(push, self.table, self.local_storage, self.status_file, files)
+        self.execute(push, self.letters_configuration, self.local_storage, self.status_file, files)
 
     def complete_push(self, word, line, begin_idx, end_idx):
         """Complete push arguments."""
@@ -175,7 +175,8 @@ class Shell(Cmd):
             pdb.post_mortem()
         elif answer == 'Restart browser':
             self.worker.restart()
-            self.table = TemplateConfigurationTable(self.worker)
+            self.letters_configuration    = ConfigurationTable('Letters Configuration', self.worker)
+            self.components_configuration = ConfigurationTable('Components Configuration', self.worker)
             return
 
         self.worker.close()

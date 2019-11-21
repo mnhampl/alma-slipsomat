@@ -114,21 +114,27 @@ class LocalStorage(object):
         with open(filename, 'rb') as fp:
             return LetterContent(fp.read().decode('utf-8'), filename=filename)
 
-    def store(self, filename, content, modified):
+    def store(self, name, content, modified):
         """
         Store the contents of a letter to disk.
 
         The method first checks if the local version has changes that will be overwritten.
         """
-        filename_with_path = './' + filename 
+        
+        # The page Letters Configuration does not show the filenames but letter names
+        # there is no possibility to find out the filenames that are used internally
+        # however, the user is (mostly) confronted with the letter names anyway 
+        filename_with_path = './' + name.replace(' ', '_')
+        if not(filename_with_path.endswith('.xsl')): # file ending
+            filename_with_path += '.xsl'
         
         if not os.path.exists(os.path.dirname(filename_with_path)):
             os.makedirs(os.path.dirname(filename_with_path))
 
         local_content = self.get_content(filename_with_path)
-        if local_content.text != '' and local_content.sha1 != self.status_file.checksum(filename):
+        if local_content.text != '' and local_content.sha1 != self.status_file.checksum(name):
             # The local file has been changed
-            if not resolve_conflict(filename, content, local_content,
+            if not resolve_conflict(name, content, local_content,
                                     'Pulling in this file would cause local changes to be overwritten.'):
                 return False
 
@@ -137,8 +143,8 @@ class LocalStorage(object):
             f.write(content.text.encode('utf-8'))
 
         # Update the status file
-        self.status_file.set_checksum(filename, content.sha1)
-        self.status_file.set_modified(filename, modified)
+        self.status_file.set_checksum(name, content.sha1)
+        self.status_file.set_modified(name, modified)
 
         return True
 
@@ -217,258 +223,6 @@ class StatusFile(object):
     def set_default_checksum(self, filename, checksum):
         self.set(filename, 'default_checksum', checksum)
 
-
-class TemplateConfigurationTable(object):
-    """Interface to "Customize letters" in Alma."""
-
-    def __init__(self, worker):
-        self.filenames = []
-        self.update_dates = []
-        self.worker = worker
-#         self.open()
-#         self.read()
-
-    def open(self):
-        try:
-            self.worker.first(By.CSS_SELECTOR, '#lettersOnPage')
-        except NoSuchElementException:
-            self.print_letter_status('Opening table...', '')
-
-            self.worker.get('/mng/action/home.do?mode=ajax')
-            # Open Alma configuration
-            self.worker.wait_for_and_click(
-                By.CSS_SELECTOR, '#ALMA_MENU_TOP_NAV_configuration')
-            # text() = "General"
-            self.worker.click(By.XPATH, '//*[@href="#CONF_MENU6"]')
-            self.worker.click(By.XPATH, '//*[text() = "Letters Configuration"]')
-            self.worker.wait_for(By.CSS_SELECTOR, '#lettersOnPage')
-
-        return self
-
-    def modified(self, filename):
-#         idx = self.filenames.index(filename)
-#         return self.update_dates[idx]
-        return ""
-
-    def set_modified(self, filename, date):
-        # Allow updating a single date instead of having to re-read the whole table
-        idx = self.filenames.index(filename)
-        self.update_dates[idx] = date
-
-    def print_letter_status(self, filename, msg, progress=None, newline=False):
-        sys.stdout.write('\r{:100}'.format(''))  # We clear the line first
-        if progress is not None:
-            sys.stdout.write('\r[{}] {:60} {}'.format(
-                progress,
-                filename.split('/')[-1],
-                msg
-            ))
-        else:
-            sys.stdout.write('\r{:60} {}'.format(
-                filename.split('/')[-1],
-                msg
-            ))
-        if newline:
-            sys.stdout.write('\n')
-        sys.stdout.flush()
-
-    def read(self):
-        
-        # number of letters on page 
-        elems_rows = self.worker.all(By.CSS_SELECTOR, '.jsRecordContainer')
-        
-        
-        # erster Wurf: nimme die ersten 10
-        for i in range(0, len(elems_rows)):
-            id = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI' % i
-            lettername = self.worker.all(By.CSS_SELECTOR, id)[0].text
-            self.filenames.append(lettername)
-            print(str(i) + ': ' + lettername)
-            
-        
-
-#         # Identify the indices of the column headers we're interested in
-#         elems = self.worker.all(By.CSS_SELECTOR, '#lettersOnPage tr > th')
-#         column_headers = [el.get_attribute('id') for el in elems]
-#         filename_col = column_headers.index('SELENIUM_ID_fileList_HEADER_cfgFilefilename') + 1
-#         updatedate_col = column_headers.index('SELENIUM_ID_fileList_HEADER_updateDate') + 1
-# 
-#         # Read the filename column
-#         elems = self.worker.all(By.CSS_SELECTOR,
-#                                 '#lettersOnPage tr > td:nth-child(%d) > a' % filename_col)
-#         self.filenames = [el.text.replace('../', '') for el in elems]
-# 
-#         # Read the modification date column
-#         elems = self.worker.all(By.CSS_SELECTOR,
-#                                 '#lettersOnPage tr > td:nth-child(%d) > span' % updatedate_col)
-#         self.update_dates = [el.text for el in elems]
-# 
-#         # return [{x[0]:2 {'modified': x[1], 'index': n}} for n, x in enumerate(zip(filenames, update_dates))]
-
-    def is_customized(self, filename):
-        index = self.filenames.index(filename)
-
-        id_element = 'SELENIUM_ID_lettersOnPage_ROW_%d_COL_customized' % index
-        self.worker.wait_for(By.ID, id_element)
-        updated_by = self.worker.first(By.ID, id_element)
-
-        return updated_by.text not in ('-', 'Network')
-
-    def assert_filename(self, filename):
-        # Assert that we are at the right letter
-        self.worker.wait_for(By.ID, 'breadcrumbs')
-        
-        element = self.worker.wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '.pageTitle'))
-        )
-        
-        elt = element.text
-        assert elt == filename, "%r != %r" % (elt, filename)
-
-    def open_letter(self, filename):
-        self.open()
-
-        # Open a letter and return its contents as a LetterContent object.
-        index = self.filenames.index(filename)
-        self.worker.wait.until(EC.presence_of_element_located(
-            (By.ID, 'SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI' % index))
-        )
-
-        time.sleep(0.2)
-
-        # Open Letter configuration
-        self.worker.scroll_into_view_and_click('#SELENIUM_ID_lettersOnPage_ROW_{}_COL_letterNameForUI a'.format(index), By.CSS_SELECTOR)
-        time.sleep(0.2)
-
-        # We should now be at the letter edit form. Assert that filename is indeed correct
-        self.assert_filename(filename)
-
-
-        # goto tab "Template"
-        # Click tab "Tempalte" menu item
-        btn_selector = '#cnew_letter_labeltemplate_span a'
-        self.worker.wait_for(By.CSS_SELECTOR, btn_selector)
-        self.worker.scroll_into_view_and_click(btn_selector, By.CSS_SELECTOR)
-        
-
-#         if self.is_customized(filename):
-#             # Click "Edit" menu item
-#             edit_btn_selector = '#ROW_ACTION_fileList_{}_c\\.ui\\.table\\.btn\\.edit a'.format(index)
-#             self.worker.scroll_into_view_and_click(edit_btn_selector, By.CSS_SELECTOR)
-#         else:
-#             # Click "Customize" menu item
-#             customize_btn_selector = '#ROW_ACTION_fileList_{} a'.format(index)
-#             self.worker.scroll_into_view_and_click(customize_btn_selector, By.CSS_SELECTOR)
-# 
-#             element = self.worker.wait_for(
-#                 By.CSS_SELECTOR,
-#                 '#PAGE_BUTTONS_cbuttonconfirmationconfirm, #pageBeanfileContent'
-#             )
-#             if element.get_attribute("id") == 'PAGE_BUTTONS_cbuttonconfirmationconfirm':
-#                 # If this is the first time the letter is edited, and it's managed in network zone,
-#                 # we will get a modal dialog asking us to confirm if we want to edit it.
-#                 #
-#                 # > This row is managed in the Network. If customized, no future updates will be
-#                 # > retrieved from the Network for this row. Are you sure you want to proceed?
-#                 #
-#                 element.click()
-
-
-
-        id_textarea = 'pageBeanfileContent'
-        self.worker.wait_for(By.ID, id_textarea)
-        txtarea = self.worker.first(By.ID, id_textarea)
-        return LetterContent(txtarea.text)
-
-    def open_default_letter(self, filename):
-        """Open a default letter and return its contents as a LetterContent object."""
-        self.open()
-
-        index = self.filenames.index(filename)
-        self.worker.wait.until(EC.presence_of_element_located(
-            (By.ID, 'SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI' % index)))
-
-        if self.is_customized(filename):
-
-            # Open the "ellipsis" menu
-            self.worker.scroll_into_view_and_click('input_fileList_%d' % index)
-            time.sleep(0.2)
-
-            # Click "View Default" menu item
-            self.worker.scroll_into_view_and_click(
-                'ROW_ACTION_fileList_%d_c.ui.table.btn.view_default' % index)
-            time.sleep(0.2)
-
-        else:
-            # Click the filename
-            self.worker.scroll_into_view_and_click(
-                '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI a' % index, By.CSS_SELECTOR)
-            time.sleep(0.2)
-
-        # Assert that filename is indeed correct
-        self.assert_filename(filename)
-
-        # Read text area content
-        txtarea = self.worker.first(By.ID, 'pageBeanfileContent')
-        return LetterContent(txtarea.text)
-
-    def close_letter(self):
-        # If we are at specific letter, press the "Cancel" button.
-        elems = self.worker.all(By.CSS_SELECTOR, '.pageTitle')
-        if len(elems) != 0:
-            btn_selector = '#PAGE_BUTTONS_cbuttonnavigationcancel'
-            self.worker.scroll_into_view_and_click(btn_selector, By.CSS_SELECTOR)
-
-        
-        
-#         # If we are at specific letter, press the "go back" button.
-#         elems = self.worker.all(By.CSS_SELECTOR, '.pageTitle')
-#         if len(elems) != 0:
-#             title = elems[0].text.strip()
-#             if title == 'Configuration File':
-#                 try:
-#                     backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonback')
-#                     backBtn.click()
-#                 except NoSuchElementException:
-#                     pass
-#                 try:
-#                     backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonnavigationcancel')
-#                     backBtn.click()
-#                 except NoSuchElementException:
-#                     pass
-# 
-#             self.worker.wait_for(By.CSS_SELECTOR, '#lettersOnPage')
-
-    def put_contents(self, filename, content):
-        """
-        Save letter contents to Alma.
-
-        This method assumes the letter has already been opened.
-        """
-        self.assert_filename(filename)
-
-        # The "normal" way to set the value of a textarea with Selenium is to use
-        # send_keys(), but it took > 30 seconds for some of the larger letters.
-        # So here's a much faster way:
-        txtarea = self.worker.first(By.ID, 'pageBeanfileContent')
-        txtarea_id = txtarea.get_attribute('id')
-
-        value = content.text.replace('"', '\\"').replace('\n', '\\n')
-        script = 'document.getElementById("%s").value = "%s";' % (txtarea_id, value)
-        self.worker.driver.execute_script(script)
-
-        # Submit the form
-        try:
-            btn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonsave')
-        except NoSuchElementException:
-            btn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttoncustomize')
-        btn.click()
-
-        # Wait for the table view.
-        # Longer timeout per https://github.com/scriptotek/alma-slipsomat/issues/33
-        self.worker.wait_for(By.CSS_SELECTOR, '.typeD table', timeout=40)
-
-        return True
 
 
 # Commands ---------------------------------------------------------------------------------
@@ -632,78 +386,20 @@ class TestPage(object):
         tmp.close()
 
 
-def pull(table, components_configuration, local_storage, status_file):
+def pull(letters_configuration, components_configuration, local_storage, status_file):
+    """
+    Update the local files with changes made in Alma.
+ 
+    This will download letters whose remote checksum does not match the value in status.json.
+ 
+    Params:
+        letters_configuration:    
+        components_configuration: 
+        local_storage:            LocalStorage object
+        status_file:              StatusFile object
+    """
     components_configuration.pull(local_storage, status_file)
-    
-#     """
-#     Update the local files with changes made in Alma.
-# 
-#     This will download letters whose remote checksum does not match the value in status.json.
-# 
-#     Params:
-#         table: TemplateConfigurationTable object
-#         local_storage: LocalStorage object
-#         status_file: StatusFile object
-#     """
-#     today = datetime.now().strftime('%d/%m/%Y')
-#     count_new = 0
-#     count_changed = 0
-#     for idx, filename in enumerate(table.filenames):
-#         progress = '%3d/%3d' % ((idx + 1), len(table.filenames))
-# 
-#         table.print_letter_status(filename, '', progress)
-# 
-# #         if table.modified(filename) == status_file.modified(filename) and status_file.modified(filename) != today:
-# #             # Update date has not changed, so no need to check the actual
-# #             # contents of the letter.
-# #             table.print_letter_status(filename, 'no changes', progress, True)
-# #             continue
-# 
-#         # Update date has changed, or is today (and we don't have time granularity),
-#         # so we should check if there are changes.
-# 
-#         table.print_letter_status(filename, 'checking...', progress)
-#         try:
-#             if table.is_customized(filename):
-#                 content = table.open_letter(filename)
-#             else:
-#                 content = table.open_default_letter(filename)
-#         except TimeoutException:
-#             # Retry once
-#             table.print_letter_status(filename, 'retrying...', progress)
-#             if table.is_customized(filename):
-#                 content = table.open_letter(filename)
-#             else:
-#                 content = table.open_default_letter(filename)
-# 
-#         table.close_letter()
-# 
-#         old_sha1 = status_file.checksum(filename)
-#         if content.sha1 == old_sha1:
-#             table.print_letter_status(filename, 'no changes', progress, True)
-#             continue
-# 
-#         # Store letter and update status.json
-# #         if not local_storage.store(filename, content, table.modified(filename)):
-# #             table.print_letter_status(
-# #                 filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
-# #             continue
-#         if not local_storage.store(filename, content, table.modified(filename)):
-#             table.print_letter_status(
-#                 filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
-#             continue
-# 
-#         if old_sha1 is None:
-#             count_new += 1
-#             table.print_letter_status(filename, Fore.GREEN + 'fetched new letter @ {}'.format(
-#                 content.sha1[0:7]) + Style.RESET_ALL, progress, True)
-#         else:
-#             count_changed += 1
-#             table.print_letter_status(filename, Fore.GREEN + 'updated from {} to {}'.format(
-#                 old_sha1[0:7], content.sha1[0:7]) + Style.RESET_ALL, progress, True)
-# 
-#     sys.stdout.write(Fore.GREEN + 'Fetched {} new, {} changed letters\n'.format(
-#         count_new, count_changed) + Style.RESET_ALL)
+    letters_configuration.pull(local_storage, status_file)
 
 
 def push(table, local_storage, status_file, files=None):

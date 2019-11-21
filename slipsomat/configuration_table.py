@@ -14,25 +14,34 @@ from colorama import Fore, Back, Style
 
 from .slipsomat import LetterContent
 
-class ComponentsConfiguration(object):
+class ConfigurationTable(object):
     """Interface to "Customize letters" in Alma."""
 
-    css_selector_table          = '#filesAndLabels'
-    css_selector_table_row      = '.jsRecordContainer'
-    css_selector_col_name       = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_letterXslcfgFilefilename'
-    css_selector_col_customized = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_customized' 
-
-
-    def __init__(self, worker):
-        self.filenames = []
+    def __init__(self, pagename, worker):
+        self.names = []
         self.update_dates = []
         self.worker = worker
-#         self.open()
-#         self.read()
+        self.pagename = pagename 
+        
+        self.css_selector_table_row      = '.jsRecordContainer'
+        self.css_selector_button_template = '#cnew_letter_labeltemplate_span'
+
+        if pagename == 'Components Configuration':
+            self.css_selector_table          = '#filesAndLabels'
+            self.css_selector_col_name       = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_letterXslcfgFilefilename'
+            self.css_selector_col_customized = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_customized' 
+        elif pagename == 'Letters Configuration':
+            self.css_selector_table          = '#lettersOnPage' 
+            self.css_selector_col_name       = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI'
+            self.css_selector_col_customized = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_customized' 
+
+        else:
+            raise Exception()
+            
+        
 
     def open(self):
         """Go from Alma start page to general configuration and open subpage"""
-        linkname = 'Components Configuration'
         
         try:
             # at page that lists letters?
@@ -51,32 +60,32 @@ class ComponentsConfiguration(object):
             self.worker.click(By.XPATH, '//*[@href="#CONF_MENU6"]')
             
             # Open Subpage
-            self.worker.click(By.XPATH, '//*[text() = "' + linkname + '"]')
+            self.worker.click(By.XPATH, '//*[text() = "' + self.pagename + '"]')
             self.worker.wait_for(By.CSS_SELECTOR, self.css_selector_table)
 
         return self
 
-    def modified(self, filename):
-#         idx = self.filenames.index(filename)
+    def modified(self, name):
+#         idx = self.names.index(name)
 #         return self.update_dates[idx]
         return ""
 
-    def set_modified(self, filename, date):
+    def set_modified(self, name, date):
         # Allow updating a single date instead of having to re-read the whole table
-        idx = self.filenames.index(filename)
+        idx = self.names.index(name)
         self.update_dates[idx] = date
 
-    def print_letter_status(self, filename, msg, progress=None, newline=False):
+    def print_letter_status(self, name, msg, progress=None, newline=False):
         sys.stdout.write('\r{:100}'.format(''))  # We clear the line first
         if progress is not None:
             sys.stdout.write('\r[{}] {:60} {}'.format(
                 progress,
-                filename.split('/')[-1],
+                name.split('/')[-1],
                 msg
             ))
         else:
             sys.stdout.write('\r{:60} {}'.format(
-                filename.split('/')[-1],
+                name.split('/')[-1],
                 msg
             ))
         if newline:
@@ -85,7 +94,7 @@ class ComponentsConfiguration(object):
 
 
     def read(self):
-        self.filenames = []
+        self.names = []
 
         # number of letters on page 
         elems_rows = self.worker.all(By.CSS_SELECTOR, self.css_selector_table_row)
@@ -94,7 +103,7 @@ class ComponentsConfiguration(object):
         for i in range(0, len(elems_rows)):
             lettername = self.worker.all(By.CSS_SELECTOR, self.css_selector_col_name % i)[0].text
             
-            self.filenames.append(lettername)
+            self.names.append(lettername)
             print(str(i+1) + ': ' + lettername)
         
 
@@ -103,11 +112,11 @@ class ComponentsConfiguration(object):
 #                                 '#lettersOnPage tr > td:nth-child(%d) > span' % updatedate_col)
 #         self.update_dates = [el.text for el in elems]
 # 
-#         # return [{x[0]:2 {'modified': x[1], 'index': n}} for n, x in enumerate(zip(filenames, update_dates))]
+#         # return [{x[0]:2 {'modified': x[1], 'index': n}} for n, x in enumerate(zip(names, update_dates))]
 
 
-    def is_customized(self, filename):
-        index = self.filenames.index(filename)
+    def is_customized(self, name):
+        index = self.names.index(name)
         css_selector_element = self.css_selector_col_customized % index
         
         self.worker.wait_for(By.CSS_SELECTOR, css_selector_element)
@@ -115,22 +124,23 @@ class ComponentsConfiguration(object):
 
         return updated_by.text not in ('-', 'Network')
 
-    def assert_filename(self, filename):
-        # Assert that we are at the right letter
-        self.worker.wait_for(By.ID, 'breadcrumbs')
+    def assert_filename(self, name):
+        """ Assert that we are at the right letter """
+        # on subpage??
+        self.worker.wait_for(By.CSS_SELECTOR, self.css_selector_button_template)
         
         element = self.worker.wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '.pageTitle'))
         )
         
         elt = element.text
-        assert elt == filename, "%r != %r" % (elt, filename)
+        assert elt == name, "%r != %r" % (elt, name)
 
-    def open_letter(self, filename):
+    def open_letter(self, name):
         self.open()
 
         # Open a letter and return its contents as a LetterContent object.
-        index = self.filenames.index(filename)
+        index = self.names.index(name)
         self.worker.wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, self.css_selector_col_name % index))
         )
@@ -141,18 +151,18 @@ class ComponentsConfiguration(object):
         self.worker.scroll_into_view_and_click((self.css_selector_col_name + ' a') % index, By.CSS_SELECTOR)
         time.sleep(0.2)
 
-        # We should now be at the letter edit form. Assert that filename is indeed correct
-        self.assert_filename(filename)
+        # We should now be at the letter edit form. Assert that name is indeed correct
+        self.assert_filename(name)
 
 
         # goto tab "Template"
         # Click tab "Template" menu item
-        css_selector_button_template = '#cnew_letter_labeltemplate_span a'
-        self.worker.wait_for(By.CSS_SELECTOR, css_selector_button_template)
-        self.worker.scroll_into_view_and_click(css_selector_button_template, By.CSS_SELECTOR)
+        css_selector_link = self.css_selector_button_template + ' a'
+        self.worker.wait_for(By.CSS_SELECTOR, css_selector_link)
+        self.worker.scroll_into_view_and_click(css_selector_link, By.CSS_SELECTOR)
         
 
-#         if self.is_customized(filename):
+#         if self.is_customized(name):
 #             # Click "Edit" menu item
 #             edit_btn_selector = '#ROW_ACTION_fileList_{}_c\\.ui\\.table\\.btn\\.edit a'.format(index)
 #             self.worker.scroll_into_view_and_click(edit_btn_selector, By.CSS_SELECTOR)
@@ -209,13 +219,13 @@ class ComponentsConfiguration(object):
 # 
 #             self.worker.wait_for(By.CSS_SELECTOR, '#lettersOnPage')
 
-    def put_contents(self, filename, content):
+    def put_contents(self, name, content):
         """
         Save letter contents to Alma.
 
         This method assumes the letter has already been opened.
         """
-        self.assert_filename(filename)
+        self.assert_filename(name)
 
         # The "normal" way to set the value of a textarea with Selenium is to use
         # send_keys(), but it took > 30 seconds for some of the larger letters.
@@ -249,50 +259,45 @@ class ComponentsConfiguration(object):
         self.open()
         self.read()
 
-        for idx, filename in enumerate(self.filenames):
-            progress = '%3d/%3d' % ((idx + 1), len(self.filenames))
+        for idx, name in enumerate(self.names):
+            progress = '%3d/%3d' % ((idx + 1), len(self.names))
     
-            self.print_letter_status(filename, '', progress)
+            self.print_letter_status(name, '', progress)
     
-            self.print_letter_status(filename, 'checking...', progress)
+            self.print_letter_status(name, 'checking...', progress)
             try:
-                content = self.open_letter(filename)
-                # if self.is_customized(filename):
-                #     content = self.open_letter(filename)
+                content = self.open_letter(name)
+                # if self.is_customized(name):
+                #     content = self.open_letter(name)
                 # else:
-                #     content = self.open_default_letter(filename)
+                #     content = self.open_default_letter(name)
             except TimeoutException:
                 # Retry once
-                self.print_letter_status(filename, 'retrying...', progress)
-                if self.is_customized(filename):
-                    content = self.open_letter(filename)
+                self.print_letter_status(name, 'retrying...', progress)
+                if self.is_customized(name):
+                    content = self.open_letter(name)
                 else:
-                    content = self.open_default_letter(filename)
+                    content = self.open_default_letter(name)
     
             self.close_letter()
     
-            old_sha1 = status_file.checksum(filename)
+            old_sha1 = status_file.checksum(name)
             if content.sha1 == old_sha1:
-                self.print_letter_status(filename, 'no changes', progress, True)
+                self.print_letter_status(name, 'no changes', progress, True)
                 continue
     
-            # Store letter and update status.json
-    #         if not local_storage.store(filename, content, self.modified(filename)):
-    #             self.print_letter_status(
-    #                 filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
-    #             continue
-            if not local_storage.store(filename, content, self.modified(filename)):
+            if not local_storage.store(name, content, self.modified(name)):
                 self.print_letter_status(
-                    filename, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
+                    name, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
                 continue
     
             if old_sha1 is None:
                 count_new += 1
-                self.print_letter_status(filename, Fore.GREEN + 'fetched new letter @ {}'.format(
+                self.print_letter_status(name, Fore.GREEN + 'fetched new letter @ {}'.format(
                     content.sha1[0:7]) + Style.RESET_ALL, progress, True)
             else:
                 count_changed += 1
-                self.print_letter_status(filename, Fore.GREEN + 'updated from {} to {}'.format(
+                self.print_letter_status(name, Fore.GREEN + 'updated from {} to {}'.format(
                     old_sha1[0:7], content.sha1[0:7]) + Style.RESET_ALL, progress, True)
     
         sys.stdout.write(Fore.GREEN + 'Fetched {} new, {} changed letters\n'.format(
