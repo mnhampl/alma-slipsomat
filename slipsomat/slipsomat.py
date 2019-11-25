@@ -114,7 +114,7 @@ class LocalStorage(object):
         with open(filename, 'rb') as fp:
             return LetterContent(fp.read().decode('utf-8'), filename=filename)
 
-    def store(self, name, content, modified):
+    def store(self, letter_info, content, modified):
         """
         Store the contents of a letter to disk.
 
@@ -124,27 +124,25 @@ class LocalStorage(object):
         # The page Letters Configuration does not show the filenames but letter names
         # there is no possibility to find out the filenames that are used internally
         # however, the user is (mostly) confronted with the letter names anyway 
-        filename_with_path = './' + name.replace(' ', '_')
-        if not(filename_with_path.endswith('.xsl')): # file ending
-            filename_with_path += '.xsl'
+        filename = letter_info.get_filename() 
         
-        if not os.path.exists(os.path.dirname(filename_with_path)):
-            os.makedirs(os.path.dirname(filename_with_path))
+        if not os.path.exists(os.path.dirname(filename)):
+            os.makedirs(os.path.dirname(filename))
 
-        local_content = self.get_content(filename_with_path)
-        if local_content.text != '' and local_content.sha1 != self.status_file.checksum(name):
+        local_content = self.get_content(filename)
+        if local_content.text != '' and local_content.sha1 != self.status_file.checksum(letter_info.unique_name):
             # The local file has been changed
-            if not resolve_conflict(name, content, local_content,
+            if not resolve_conflict(filename, content, local_content,
                                     'Pulling in this file would cause local changes to be overwritten.'):
                 return False
 
         # Actually store the contents to disk
-        with open(filename_with_path, 'wb') as f:
+        with open(filename, 'wb') as f:
             f.write(content.text.encode('utf-8'))
 
         # Update the status file
-        self.status_file.set_checksum(name, content.sha1)
-        self.status_file.set_modified(name, modified)
+        self.status_file.set_checksum(letter_info.get_filename(), content.sha1)
+        self.status_file.set_modified(letter_info.get_filename(), modified)
 
         return True
 

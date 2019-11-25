@@ -13,12 +13,13 @@ from selenium.webdriver.remote.errorhandler import NoSuchElementException
 from colorama import Fore, Back, Style
 
 from .slipsomat import LetterContent
+from .letter_info import LetterInfo
 
 class ConfigurationTable(object):
     """Interface to "Customize letters" in Alma."""
 
     def __init__(self, pagename, worker):
-        self.names = []
+        self.letter_infos = []   # array of LetterInfo objects  
         self.update_dates = []
         self.worker = worker
         self.pagename = pagename 
@@ -27,13 +28,14 @@ class ConfigurationTable(object):
         self.css_selector_button_template = '#cnew_letter_labeltemplate_span'
 
         if pagename == 'Components Configuration':
-            self.css_selector_table          = '#filesAndLabels'
-            self.css_selector_col_name       = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_letterXslcfgFilefilename'
-            self.css_selector_col_customized = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_customized' 
+            self.css_selector_table           = '#filesAndLabels'
+            self.css_selector_col_name        = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_letterXslcfgFilefilename'
+            self.css_selector_col_customized  = '#SELENIUM_ID_filesAndLabels_ROW_%d_COL_customized' 
         elif pagename == 'Letters Configuration':
-            self.css_selector_table          = '#lettersOnPage' 
-            self.css_selector_col_name       = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI'
-            self.css_selector_col_customized = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_customized' 
+            self.css_selector_table           = '#lettersOnPage' 
+            self.css_selector_col_name        = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_letterNameForUI'
+            self.css_selector_col_channel     = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_channel'
+            self.css_selector_col_customized  = '#SELENIUM_ID_lettersOnPage_ROW_%d_COL_customized' 
 
         else:
             raise Exception()
@@ -72,20 +74,20 @@ class ConfigurationTable(object):
 
     def set_modified(self, name, date):
         # Allow updating a single date instead of having to re-read the whole table
-        idx = self.names.index(name)
+        idx = self.letter_infos.index(name)
         self.update_dates[idx] = date
 
-    def print_letter_status(self, name, msg, progress=None, newline=False):
+    def print_letter_status(self, string, msg, progress=None, newline=False):
         sys.stdout.write('\r{:100}'.format(''))  # We clear the line first
         if progress is not None:
             sys.stdout.write('\r[{}] {:60} {}'.format(
                 progress,
-                name.split('/')[-1],
+                string.split('/')[-1],
                 msg
             ))
         else:
             sys.stdout.write('\r{:60} {}'.format(
-                name.split('/')[-1],
+                string.split('/')[-1],
                 msg
             ))
         if newline:
@@ -94,17 +96,24 @@ class ConfigurationTable(object):
 
 
     def read(self):
-        self.names = []
+        self.letter_infos = []
 
         # number of letters on page 
         elems_rows = self.worker.all(By.CSS_SELECTOR, self.css_selector_table_row)
         
         # first try: only read the first page
         for i in range(0, len(elems_rows)):
-            lettername = self.worker.all(By.CSS_SELECTOR, self.css_selector_col_name % i)[0].text
+            name = self.worker.all(By.CSS_SELECTOR, self.css_selector_col_name % i)[0].text
             
-            self.names.append(lettername)
-            print(str(i+1) + ': ' + lettername)
+            if self.pagename == 'Letters Configuration':
+                channel = self.worker.all(By.CSS_SELECTOR, self.css_selector_col_channel % i)[0].text
+            else:
+                channel = None
+
+            letter_info = LetterInfo(name, i, channel)
+                
+            self.letter_infos.append(letter_info)
+            print(str(i+1) + ': ' + letter_info.unique_name)
         
 
 #         # Read the modification date column
@@ -116,7 +125,7 @@ class ConfigurationTable(object):
 
 
     def is_customized(self, name):
-        index = self.names.index(name)
+        index = self.letter_infos.index(name)
         css_selector_element = self.css_selector_col_customized % index
         
         self.worker.wait_for(By.CSS_SELECTOR, css_selector_element)
@@ -124,7 +133,7 @@ class ConfigurationTable(object):
 
         return updated_by.text not in ('-', 'Network')
 
-    def assert_filename(self, name):
+    def assert_page_title(self, page_title):
         """ Assert that we are at the right letter """
         # on subpage??
         self.worker.wait_for(By.CSS_SELECTOR, self.css_selector_button_template)
@@ -134,13 +143,14 @@ class ConfigurationTable(object):
         )
         
         elt = element.text
-        assert elt == name, "%r != %r" % (elt, name)
+        assert elt == page_title, "%r != %r" % (elt, page_title)
 
-    def open_letter(self, name):
+
+    def open_letter(self, letter_info):
         self.open()
 
         # Open a letter and return its contents as a LetterContent object.
-        index = self.names.index(name)
+        index = self.letter_infos.index(letter_info)
         self.worker.wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, self.css_selector_col_name % index))
         )
@@ -151,8 +161,8 @@ class ConfigurationTable(object):
         self.worker.scroll_into_view_and_click((self.css_selector_col_name + ' a') % index, By.CSS_SELECTOR)
         time.sleep(0.2)
 
-        # We should now be at the letter edit form. Assert that name is indeed correct
-        self.assert_filename(name)
+        # We should now be at the letter edit form. Assert that page title is correct
+        self.assert_page_title(letter_info.name)
 
 
         # goto tab "Template"
@@ -219,13 +229,13 @@ class ConfigurationTable(object):
 # 
 #             self.worker.wait_for(By.CSS_SELECTOR, '#lettersOnPage')
 
-    def put_contents(self, name, content):
+    def put_contents(self, letter_info, content):
         """
         Save letter contents to Alma.
 
         This method assumes the letter has already been opened.
         """
-        self.assert_filename(name)
+        self.assert_page_title(letter_info.name)
 
         # The "normal" way to set the value of a textarea with Selenium is to use
         # send_keys(), but it took > 30 seconds for some of the larger letters.
@@ -259,45 +269,55 @@ class ConfigurationTable(object):
         self.open()
         self.read()
 
-        for idx, name in enumerate(self.names):
-            progress = '%3d/%3d' % ((idx + 1), len(self.names))
+        for idx, letter_info in enumerate(self.letter_infos):
+            progress = '%3d/%3d' % ((idx + 1), len(self.letter_infos))
     
-            self.print_letter_status(name, '', progress)
+            self.print_letter_status(letter_info.unique_name, '', progress)
     
-            self.print_letter_status(name, 'checking...', progress)
+            self.print_letter_status(letter_info.unique_name, 'checking...', progress)
+
+            # --- Bug, skip webhook letters 
+            if letter_info.unique_name.endswith('-WEBHOOK'):
+                self.print_letter_status(
+                    letter_info.unique_name, Fore.RED + 'skipped WEBHOOK' + Style.RESET_ALL, progress, True)
+                continue
+            # --- End Bug, Letter             
+            
+            
+            
             try:
-                content = self.open_letter(name)
-                # if self.is_customized(name):
-                #     content = self.open_letter(name)
+                content = self.open_letter(letter_info)
+                # if self.is_customized(letter_info):
+                #     content = self.open_letter(letter_info)
                 # else:
-                #     content = self.open_default_letter(name)
+                #     content = self.open_default_letter(letter_info)
             except TimeoutException:
                 # Retry once
-                self.print_letter_status(name, 'retrying...', progress)
-                if self.is_customized(name):
-                    content = self.open_letter(name)
-                else:
-                    content = self.open_default_letter(name)
+                self.print_letter_status(letter_info.unique_name, 'retrying...', progress)
+#                 if self.is_customized(letter_info):
+                content = self.open_letter(letter_info)
+#                 else:
+#                     content = self.open_default_letter(letter_info)
     
             self.close_letter()
     
-            old_sha1 = status_file.checksum(name)
+            old_sha1 = status_file.checksum(letter_info.get_filename())
             if content.sha1 == old_sha1:
-                self.print_letter_status(name, 'no changes', progress, True)
+                self.print_letter_status(letter_info.unique_name, 'no changes', progress, True)
                 continue
     
-            if not local_storage.store(name, content, self.modified(name)):
+            if not local_storage.store(letter_info, content, self.modified(letter_info)):
                 self.print_letter_status(
-                    name, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
+                    letter_info.unique_name, Fore.RED + 'skipped due to conflict' + Style.RESET_ALL, progress, True)
                 continue
     
             if old_sha1 is None:
                 count_new += 1
-                self.print_letter_status(name, Fore.GREEN + 'fetched new letter @ {}'.format(
+                self.print_letter_status(letter_info.unique_name, Fore.GREEN + 'fetched new letter @ {}'.format(
                     content.sha1[0:7]) + Style.RESET_ALL, progress, True)
             else:
                 count_changed += 1
-                self.print_letter_status(name, Fore.GREEN + 'updated from {} to {}'.format(
+                self.print_letter_status(letter_info.unique_name, Fore.GREEN + 'updated from {} to {}'.format(
                     old_sha1[0:7], content.sha1[0:7]) + Style.RESET_ALL, progress, True)
     
         sys.stdout.write(Fore.GREEN + 'Fetched {} new, {} changed letters\n'.format(
