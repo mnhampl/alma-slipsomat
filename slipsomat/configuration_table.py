@@ -170,31 +170,6 @@ class ConfigurationTable(object):
         css_selector_link = self.css_selector_button_template + ' a'
         self.worker.wait_for(By.CSS_SELECTOR, css_selector_link)
         self.worker.scroll_into_view_and_click(css_selector_link, By.CSS_SELECTOR)
-        
-
-#         if self.is_customized(name):
-#             # Click "Edit" menu item
-#             edit_btn_selector = '#ROW_ACTION_fileList_{}_c\\.ui\\.table\\.btn\\.edit a'.format(index)
-#             self.worker.scroll_into_view_and_click(edit_btn_selector, By.CSS_SELECTOR)
-#         else:
-#             # Click "Customize" menu item
-#             customize_btn_selector = '#ROW_ACTION_fileList_{} a'.format(index)
-#             self.worker.scroll_into_view_and_click(customize_btn_selector, By.CSS_SELECTOR)
-# 
-#             element = self.worker.wait_for(
-#                 By.CSS_SELECTOR,
-#                 '#PAGE_BUTTONS_cbuttonconfirmationconfirm, #pageBeanfileContent'
-#             )
-#             if element.get_attribute("id") == 'PAGE_BUTTONS_cbuttonconfirmationconfirm':
-#                 # If this is the first time the letter is edited, and it's managed in network zone,
-#                 # we will get a modal dialog asking us to confirm if we want to edit it.
-#                 #
-#                 # > This row is managed in the Network. If customized, no future updates will be
-#                 # > retrieved from the Network for this row. Are you sure you want to proceed?
-#                 #
-#                 element.click()
-
-
 
         css_selector_template_textarea = 'pageBeanfileContent'
         self.worker.wait_for(By.ID, css_selector_template_textarea)
@@ -210,25 +185,6 @@ class ConfigurationTable(object):
             self.worker.scroll_into_view_and_click(btn_selector, By.CSS_SELECTOR)
 
         
-        
-#         # If we are at specific letter, press the "go back" button.
-#         elems = self.worker.all(By.CSS_SELECTOR, '.pageTitle')
-#         if len(elems) != 0:
-#             title = elems[0].text.strip()
-#             if title == 'Configuration File':
-#                 try:
-#                     backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonback')
-#                     backBtn.click()
-#                 except NoSuchElementException:
-#                     pass
-#                 try:
-#                     backBtn = self.worker.first(By.ID, 'PAGE_BUTTONS_cbuttonnavigationcancel')
-#                     backBtn.click()
-#                 except NoSuchElementException:
-#                     pass
-# 
-#             self.worker.wait_for(By.CSS_SELECTOR, '#lettersOnPage')
-
     def put_contents(self, letter_info, content):
         """
         Save letter contents to Alma.

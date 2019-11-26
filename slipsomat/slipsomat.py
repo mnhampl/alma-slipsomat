@@ -130,7 +130,7 @@ class LocalStorage(object):
             os.makedirs(os.path.dirname(filename))
 
         local_content = self.get_content(filename)
-        if local_content.text != '' and local_content.sha1 != self.status_file.checksum(letter_info.unique_name):
+        if local_content.text != '' and local_content.sha1 != self.status_file.checksum(filename):
             # The local file has been changed
             if not resolve_conflict(filename, content, local_content,
                                     'Pulling in this file would cause local changes to be overwritten.'):
@@ -141,8 +141,8 @@ class LocalStorage(object):
             f.write(content.text.encode('utf-8'))
 
         # Update the status file
-        self.status_file.set_checksum(letter_info.get_filename(), content.sha1)
-        self.status_file.set_modified(letter_info.get_filename(), modified)
+        self.status_file.set_checksum(filename, content.sha1)
+        self.status_file.set_modified(filename, modified)
 
         return True
 
